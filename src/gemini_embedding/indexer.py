@@ -1,5 +1,6 @@
 """Indexer module for populating ChromaDB with multimodal embeddings."""
 
+import hashlib
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -11,6 +12,12 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from gemini_embedding.config import settings
 from gemini_embedding.embeddings import embed_file, file_kind, get_genai_client
 from gemini_embedding.vector_store import MultimodalVectorStore
+
+
+def stable_item_id(path: Path) -> str:
+    """Return a deterministic ChromaDB ID for a media file."""
+    digest = hashlib.sha1(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
+    return f"file-{digest}"
 
 
 def index_directory(
@@ -80,7 +87,9 @@ def index_directory(
             )
 
             # Upsert into ChromaDB with metadata
-            item_id = f"file-{idx:04d}"
+            # Stable ID derived from the absolute path: re-indexing the same file updates its
+            # vector instead of colliding with whatever sat at the same position before.
+            item_id = stable_item_id(file_path)
             store.upsert_item(
                 item_id=item_id,
                 embedding=vector,

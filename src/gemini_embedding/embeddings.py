@@ -17,7 +17,11 @@ from google.genai import types
 
 from gemini_embedding.config import settings
 
-# Supported task prefixes for Gemini Embedding 2
+# Official per-request limit for image inputs (PNG/JPEG).
+MAX_IMAGES_PER_REQUEST = 6
+
+# Supported task prefixes for Gemini Embedding 2.
+# gemini-embedding-2 does not accept the `task_type` field: the task goes in the text itself.
 ASYMMETRIC_TASKS = {
     "search result": "search result",
     "search": "search result",
@@ -123,22 +127,11 @@ def embed_text(
 
     config = types.EmbedContentConfig(output_dimensionality=target_dims)
 
-    try:
-        response = client.models.embed_content(
-            model=target_model,
-            contents=contents,
-            config=config,
-        )
-    except Exception as exc:
-        # Fallback to preview endpoint if GA not yet available in the caller's region
-        if target_model == "gemini-embedding-2" and "not found" in str(exc).lower():
-            response = client.models.embed_content(
-                model="gemini-embedding-2-preview",
-                contents=contents,
-                config=config,
-            )
-        else:
-            raise
+    response = client.models.embed_content(
+        model=target_model,
+        contents=contents,
+        config=config,
+    )
 
     return response.embeddings[0].values
 
@@ -172,21 +165,11 @@ def embed_file(
     part = types.Part.from_bytes(data=data, mime_type=resolved_mime)
     config = types.EmbedContentConfig(output_dimensionality=target_dims)
 
-    try:
-        response = client.models.embed_content(
-            model=target_model,
-            contents=[part],
-            config=config,
-        )
-    except Exception as exc:
-        if target_model == "gemini-embedding-2" and "not found" in str(exc).lower():
-            response = client.models.embed_content(
-                model="gemini-embedding-2-preview",
-                contents=[part],
-                config=config,
-            )
-        else:
-            raise
+    response = client.models.embed_content(
+        model=target_model,
+        contents=[part],
+        config=config,
+    )
 
     return response.embeddings[0].values
 
@@ -242,6 +225,13 @@ def embed_separate_batch(
     """
     target_dims = dims or settings.embedding_dimensions
     target_model = model or settings.gemini_embedding_model
+
+    image_count = sum(1 for item in items if file_kind(item) == "image")
+    if image_count > MAX_IMAGES_PER_REQUEST:
+        raise ValueError(
+            f"Gemini Embedding 2 accepts at most {MAX_IMAGES_PER_REQUEST} images per request "
+            f"(got {image_count}). Split the batch into smaller requests."
+        )
 
     content_objects: list[types.Content] = []
     for item in items:

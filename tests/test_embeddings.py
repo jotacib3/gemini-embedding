@@ -157,3 +157,20 @@ def test_embed_separate_batch_mocked(tmp_path: Path):
     assert len(contents) == 2
     assert isinstance(contents[0], types.Content)
     assert isinstance(contents[1], types.Content)
+
+
+def test_separate_batch_rejects_more_than_six_images(tmp_path):
+    """The API accepts at most 6 images per request; fail fast with a clear message."""
+    import pytest
+    from PIL import Image
+
+    from gemini_embedding.embeddings import embed_separate_batch
+
+    paths = []
+    for i in range(7):
+        path = tmp_path / f"img{i}.png"
+        Image.new("RGB", (8, 8)).save(path)
+        paths.append(path)
+
+    with pytest.raises(ValueError, match="at most 6 images"):
+        embed_separate_batch(client=None, items=paths)  # type: ignore[arg-type]

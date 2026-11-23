@@ -59,3 +59,22 @@ def test_index_directory_and_search(tmp_path: Path):
         assert len(results_img) == 2
         for r in results_img:
             assert r["kind"] == "image"
+
+
+def test_reindexing_same_files_does_not_duplicate(tmp_path: Path):
+    """IDs come from file paths, so indexing twice updates vectors instead of adding new ones."""
+    media_dir = tmp_path / "media"
+    generate_sample_media(output_dir=media_dir)
+    store = MultimodalVectorStore(persist_dir=tmp_path / "chroma", collection_name="reindex")
+
+    with patch("gemini_embedding.indexer.embed_file", return_value=[0.1] * 768):
+        for _ in range(2):
+            index_directory(
+                media_dir=media_dir,
+                client=MagicMock(),
+                vector_store=store,
+                rate_limit_delay=0.0,
+                show_progress=False,
+            )
+
+    assert store.count() == 8
